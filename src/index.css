@@ -1,0 +1,117 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-main: 'Sora', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-family: var(--font-main);
+}
+
+body {
+  overflow: hidden;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.35);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.6);
+}
+
+/* Smooth theme transition */
+html, body, #root, * {
+  transition: background-color 0.25s ease, border-color 0.25s ease, color 0.15s ease;
+}
+
+/* Message fade-in animation */
+@keyframes msgIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.msg-animate {
+  animation: msgIn 0.3s ease forwards;
+}
+
+/* Typing dots */
+@keyframes blink {
+  0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1); }
+}
+
+.dot-1 { animation: blink 1.2s infinite 0s; }
+.dot-2 { animation: blink 1.2s infinite 0.2s; }
+.dot-3 { animation: blink 1.2s infinite 0.4s; }
+
+/* Sidebar item hover */
+.sidebar-item {
+  transition: background 0.15s ease;
+}
+
+/* Textarea auto-height */
+textarea {
+  resize: none;
+  font-family: var(--font-main);
+}
+
+/* Prose styling for AI messages */
+.prose-gyanix p { margin-bottom: 0.65em; line-height: 1.75; }
+.prose-gyanix p:last-child { margin-bottom: 0; }
+.prose-gyanix ul, .prose-gyanix ol { padding-left: 1.5em; margin-bottom: 0.65em; }
+.prose-gyanix li { margin-bottom: 0.3em; }
+.prose-gyanix h1,.prose-gyanix h2,.prose-gyanix h3 { font-weight: 600; margin: 0.8em 0 0.4em; }
+.prose-gyanix code { font-family: var(--font-mono); font-size: 0.88em; padding: 0.15em 0.4em; border-radius: 5px; }
+.prose-gyanix pre { border-radius: 10px; overflow-x: auto; margin: 0.75em 0; }
+.prose-gyanix blockquote { border-left: 3px solid #6366f1; padding-left: 1em; opacity: 0.8; margin: 0.5em 0; }
+.prose-gyanix strong { font-weight: 600; }
+.prose-gyanix a { color: #6366f1; text-decoration: underline; }
+
+/* Glow effect on focus input */
+.input-glow:focus-within {
+  box-shadow: 0 0 0 2px rgba(99,102,241,0.3), 0 4px 24px rgba(99,102,241,0.12);
+}
+
+/* Gradient text */
+.gradient-text {
+  background: linear-gradient(135deg, #6366f1, #a78bfa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* New chat button pulse */
+@keyframes subtlePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(99,102,241,0.3); }
+  50% { box-shadow: 0 0 0 6px rgba(99,102,241,0); }
+}
+
+/* Sidebar collapse animation */
+.sidebar-transition {
+  transition: width 0.28s cubic-bezier(0.4, 0, 0.2, 1), 
+              opacity 0.2s ease,
+              transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
