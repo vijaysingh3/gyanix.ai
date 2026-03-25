@@ -85,7 +85,12 @@ export default function App() {
   }
 
   const handleSendMessage = useCallback(async (text) => {
-    if (!text.trim() || isStreaming) return
+    console.log('[FRONTEND DEBUG] handleSendMessage called with:', text)
+    
+    if (!text.trim() || isStreaming) {
+      console.log('[FRONTEND DEBUG] Skipping - empty text or already streaming')
+      return
+    }
 
     const userMsg = {
       id: generateId(),
@@ -110,6 +115,7 @@ export default function App() {
       setChats(prev => [newChat, ...prev])
       setActiveChatId(chatId)
       existingMessages = [userMsg]
+      console.log('[FRONTEND DEBUG] Created new chat with ID:', chatId)
     } else {
       // Existing chat
       setChats(prev => prev.map(c =>
@@ -119,6 +125,7 @@ export default function App() {
       ))
       const currentChat = chats.find(c => c.id === chatId)
       existingMessages = currentChat ? [...currentChat.messages, userMsg] : [userMsg]
+      console.log('[FRONTEND DEBUG] Added message to existing chat:', chatId)
     }
 
     // Add thinking placeholder for AI
@@ -137,6 +144,7 @@ export default function App() {
           }
         : c
     ))
+    console.log('[FRONTEND DEBUG] Added thinking placeholder, ID:', assistantMsgId)
 
     setIsStreaming(true)
 
@@ -148,20 +156,30 @@ export default function App() {
       }
 
       const apiMessages = [systemMessage, ...buildApiMessages(existingMessages)]
+      console.log('[FRONTEND DEBUG] API Messages being sent:', JSON.stringify(apiMessages, null, 2))
 
       // Call Vercel serverless function
+      console.log('[FRONTEND DEBUG] Calling /api/chat...')
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: apiMessages }),
       })
+      
+      console.log('[FRONTEND DEBUG] Response status:', response.status, response.statusText)
+      console.log('[FRONTEND DEBUG] Response headers:', Object.fromEntries(response.headers.entries()))
 
       if (!response.ok) {
         let errMsg = `API Error: ${response.status}`
         try {
           const err = await response.json()
+          console.log('[FRONTEND DEBUG] Error response from API:', err)
           errMsg = err.error || errMsg
-        } catch {}
+        } catch (parseErr) {
+          console.log('[FRONTEND DEBUG] Could not parse error response:', parseErr)
+          const textErr = await response.text()
+          console.log('[FRONTEND DEBUG] Raw error response:', textErr)
+        }
         throw new Error(errMsg)
       }
 
@@ -176,17 +194,24 @@ export default function App() {
             }
           : c
       ))
+      console.log('[FRONTEND DEBUG] Switched from thinking to streaming mode')
 
       // Read SSE stream
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let fullContent = ''
       let buffer = ''
+      let chunkCount = 0
 
+      console.log('[FRONTEND DEBUG] Starting to read SSE stream...')
       while (true) {
         const { done, value } = await reader.read()
-        if (done) break
+        if (done) {
+          console.log('[FRONTEND DEBUG] Stream finished (done=true)')
+          break
+        }
 
+        chunkCount++
         buffer += decoder.decode(value, { stream: true })
         const lines = buffer.split('\n')
         buffer = lines.pop() // keep incomplete line
@@ -194,10 +219,14 @@ export default function App() {
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             const data = line.slice(6).trim()
-            if (data === '[DONE]') continue
+            if (data === '[DONE]') {
+              console.log('[FRONTEND DEBUG] Received [DONE] from server')
+              continue
+            }
 
             try {
               const parsed = JSON.parse(data)
+              console.log(`[FRONTEND DEBUG] Chunk #${chunkCount}:`, parsed)
               if (parsed.error) throw new Error(parsed.error)
               if (parsed.content) {
                 fullContent += parsed.content
@@ -218,6 +247,7 @@ export default function App() {
               }
             } catch (parseErr) {
               if (parseErr.message !== 'Unexpected end of JSON input') {
+                console.log('[FRONTEND DEBUG] Parse error:', parseErr, 'Raw line:', line)
                 throw parseErr
               }
             }
@@ -225,8 +255,11 @@ export default function App() {
         }
       }
 
+      console.log('[FRONTEND DEBUG] Final content length:', fullContent.length)
+
       // If response was empty
       if (!fullContent.trim()) {
+        console.log('[FRONTEND DEBUG] Empty response received')
         setChats(prev => prev.map(c =>
           c.id === chatId
             ? {
@@ -242,8 +275,9 @@ export default function App() {
       }
 
     } catch (error) {
+      console.log('[FRONTEND DEBUG] Caught error:', error)
       // Show error message in chat
-      const errorContent = `❌ **Error:** ${error.message}\n\nKripya check karein:\n- Internet connection theek hai?\n- Vercel mein \`x_url_api\` env variable set hai?\n- Sarvam AI API key valid hai?`
+      const errorContent = `❌ **Error:** ${error.message}\n\nKripya check karein:\n- Internet connection theek hai?\n- Vercel mein \`x_url_api\` env variable set hai?\n- Sarvam AI API key valid hai?\n\n🔍 **Debug:** Check browser console for details.`
       setChats(prev => prev.map(c =>
         c.id === chatId
           ? {
@@ -258,6 +292,7 @@ export default function App() {
       ))
     } finally {
       setIsStreaming(false)
+      console.log('[FRONTEND DEBUG] Streaming finished, isStreaming=false')
     }
   }, [activeChatId, chats, isStreaming])
 
