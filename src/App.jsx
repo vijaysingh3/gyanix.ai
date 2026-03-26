@@ -31,9 +31,10 @@ export default function App() {
   const [isMobile, setIsMobile] = useState(false)
   const [isStreaming, setIsStreaming] = useState(false)
 
-  // Supabase config from .env.local
-  const SUPABASE_FUN_URL = import.meta.env.VITE_SUPABASE_FUN_URL
+  // ✅ Supabase - gyanix-ai function
   const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+  const SUPABASE_FUN_URL = import.meta.env.VITE_SUPABASE_FUN_URL
+  // VITE_SUPABASE_FUN_URL = https://kvtrzaaxwsxlisdjucxk.supabase.co/functions/v1/gyanix-ai
 
   useEffect(() => {
     const check = () => {
@@ -138,9 +139,8 @@ export default function App() {
     setIsStreaming(true)
 
     try {
-      // Check env variables
-      if (!SUPABASE_FUN_URL) throw new Error('VITE_SUPABASE_FUN_URL missing in .env.local')
-      if (!SUPABASE_ANON_KEY) throw new Error('VITE_SUPABASE_ANON_KEY missing in .env.local')
+      if (!SUPABASE_ANON_KEY) throw new Error('VITE_SUPABASE_ANON_KEY Vercel mein set nahi hai!')
+      if (!SUPABASE_FUN_URL) throw new Error('VITE_SUPABASE_FUN_URL Vercel mein set nahi hai!')
 
       const systemMessage = {
         role: 'system',
@@ -149,7 +149,7 @@ export default function App() {
 
       const apiMessages = [systemMessage, ...buildApiMessages(existingMessages)]
 
-      // Call Supabase Edge Function directly
+      // ✅ Supabase Edge Function: gyanix-ai
       const response = await fetch(SUPABASE_FUN_URL, {
         method: 'POST',
         headers: {
@@ -172,7 +172,7 @@ export default function App() {
         throw new Error(errMsg)
       }
 
-      // Switch from thinking → streaming mode
+      // Switch thinking → streaming
       setChats(prev => prev.map(c =>
         c.id === chatId
           ? {
@@ -196,7 +196,7 @@ export default function App() {
 
         buffer += decoder.decode(value, { stream: true })
         const lines = buffer.split('\n')
-        buffer = lines.pop() // keep incomplete line in buffer
+        buffer = lines.pop()
 
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue
@@ -207,10 +207,9 @@ export default function App() {
           try {
             const parsed = JSON.parse(data)
             const delta = parsed.choices?.[0]?.delta
-
             if (!delta) continue
 
-            // ✅ Only use 'content' field — skip 'reasoning_content' (thinking steps)
+            // ✅ Only content — skip reasoning_content (thinking steps)
             const chunk = delta.content
             if (chunk && typeof chunk === 'string') {
               fullContent += chunk
@@ -229,12 +228,12 @@ export default function App() {
               ))
             }
           } catch {
-            // Skip malformed chunks silently
+            // Skip malformed chunks
           }
         }
       }
 
-      // Handle empty response
+      // Empty response fallback
       if (!fullContent.trim()) {
         setChats(prev => prev.map(c =>
           c.id === chatId
@@ -251,7 +250,7 @@ export default function App() {
       }
 
     } catch (error) {
-      const errorContent = `❌ **Error:** ${error.message}\n\nKripya check karein:\n- \`.env.local\` mein \`VITE_SUPABASE_FUN_URL\` sahi hai?\n- \`VITE_SUPABASE_ANON_KEY\` set hai?\n- Supabase Edge Function deploy hui hai?`
+      const errorContent = `❌ **Error:** ${error.message}\n\nKripya check karein:\n- Vercel mein \`VITE_SUPABASE_FUN_URL\` set hai?\n- Supabase function \`gyanix-ai\` deploy hui hai?\n- Supabase secrets mein \`x-api-key\` (Sarvam API key) set hai?`
       setChats(prev => prev.map(c =>
         c.id === chatId
           ? {
