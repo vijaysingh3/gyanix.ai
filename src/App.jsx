@@ -31,7 +31,10 @@ export default function App() {
   const [isMobile, setIsMobile] = useState(false)
   const [isStreaming, setIsStreaming] = useState(false)
 
-  // Detect mobile
+  // Supabase config from .env.local
+  const SUPABASE_FUN_URL = import.meta.env.VITE_SUPABASE_FUN_URL
+  const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+
   useEffect(() => {
     const check = () => {
       const mobile = window.innerWidth < 768
@@ -43,19 +46,16 @@ export default function App() {
     return () => window.removeEventListener('resize', check)
   }, [])
 
-  // Apply theme to html element
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark')
     localStorage.setItem(THEME_KEY, theme)
   }, [theme])
 
-  // Persist chats
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(chats))
   }, [chats])
 
   const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark')
-
   const activeChat = chats.find(c => c.id === activeChatId) || null
 
   const createNewChat = useCallback(() => {
@@ -77,7 +77,6 @@ export default function App() {
     setChats(prev => prev.map(c => c.id === id ? { ...c, title: newTitle } : c))
   }, [])
 
-  // Build message history for API (only role + content, skip thinking/empty)
   const buildApiMessages = (chatMessages) => {
     return chatMessages
       .filter(m => !m.thinking && m.content && m.content.trim())
@@ -85,12 +84,7 @@ export default function App() {
   }
 
   const handleSendMessage = useCallback(async (text) => {
-    console.log('[FRONTEND DEBUG] handleSendMessage called with:', text)
-    
-    if (!text.trim() || isStreaming) {
-      console.log('[FRONTEND DEBUG] Skipping - empty text or already streaming')
-      return
-    }
+    if (!text.trim() || isStreaming) return
 
     const userMsg = {
       id: generateId(),
@@ -103,7 +97,6 @@ export default function App() {
     let existingMessages = []
 
     if (!chatId) {
-      // New chat
       chatId = generateId()
       const newChat = {
         id: chatId,
@@ -115,9 +108,7 @@ export default function App() {
       setChats(prev => [newChat, ...prev])
       setActiveChatId(chatId)
       existingMessages = [userMsg]
-      console.log('[FRONTEND DEBUG] Created new chat with ID:', chatId)
     } else {
-      // Existing chat
       setChats(prev => prev.map(c =>
         c.id === chatId
           ? { ...c, messages: [...c.messages, userMsg], updatedAt: Date.now() }
@@ -125,10 +116,9 @@ export default function App() {
       ))
       const currentChat = chats.find(c => c.id === chatId)
       existingMessages = currentChat ? [...currentChat.messages, userMsg] : [userMsg]
-      console.log('[FRONTEND DEBUG] Added message to existing chat:', chatId)
     }
 
-    // Add thinking placeholder for AI
+    // Add thinking placeholder
     const assistantMsgId = generateId()
     setChats(prev => prev.map(c =>
       c.id === chatId
@@ -144,46 +134,45 @@ export default function App() {
           }
         : c
     ))
-    console.log('[FRONTEND DEBUG] Added thinking placeholder, ID:', assistantMsgId)
 
     setIsStreaming(true)
 
     try {
-      // System prompt — Gyanix personality
+      // Check env variables
+      if (!SUPABASE_FUN_URL) throw new Error('VITE_SUPABASE_FUN_URL missing in .env.local')
+      if (!SUPABASE_ANON_KEY) throw new Error('VITE_SUPABASE_ANON_KEY missing in .env.local')
+
       const systemMessage = {
         role: 'system',
-        content: `You are Gyanix, an intelligent and friendly AI assistant built for Indian users. You are helpful, knowledgeable, and conversational. You speak fluently in both Hindi and English — always respond in the same language the user writes in (if they write in Hindi, reply in Hindi; if English, reply in English; Hinglish is also fine). You understand Indian culture, context, and references very well. Always be helpful, accurate, and friendly. Use markdown formatting in your responses — code blocks for code, bullet points for lists, bold for important terms, headers for sections when needed.`,
+        content: `You are Gyanix, an intelligent and friendly AI assistant built for Indian users. You speak fluently in both Hindi and English — respond in the same language the user writes in. You understand Indian culture and context very well. Always be helpful, accurate, and friendly. Use markdown formatting — code blocks for code, bullet points for lists, bold for important terms.`,
       }
 
       const apiMessages = [systemMessage, ...buildApiMessages(existingMessages)]
-      console.log('[FRONTEND DEBUG] API Messages being sent:', JSON.stringify(apiMessages, null, 2))
 
-      // Call Vercel serverless function
-      console.log('[FRONTEND DEBUG] Calling /api/chat...')
-      const response = await fetch('/api/chat', {
+      // Call Supabase Edge Function directly
+      const response = await fetch(SUPABASE_FUN_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages }),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'apikey': SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({
+          messages: apiMessages,
+          stream: true,
+        }),
       })
-      
-      console.log('[FRONTEND DEBUG] Response status:', response.status, response.statusText)
-      console.log('[FRONTEND DEBUG] Response headers:', Object.fromEntries(response.headers.entries()))
 
       if (!response.ok) {
-        let errMsg = `API Error: ${response.status}`
+        let errMsg = `Supabase Error: ${response.status}`
         try {
-          const err = await response.json()
-          console.log('[FRONTEND DEBUG] Error response from API:', err)
-          errMsg = err.error || errMsg
-        } catch (parseErr) {
-          console.log('[FRONTEND DEBUG] Could not parse error response:', parseErr)
-          const textErr = await response.text()
-          console.log('[FRONTEND DEBUG] Raw error response:', textErr)
-        }
+          const errText = await response.text()
+          errMsg = errText || errMsg
+        } catch {}
         throw new Error(errMsg)
       }
 
-      // Switch thinking → streaming
+      // Switch from thinking → streaming mode
       setChats(prev => prev.map(c =>
         c.id === chatId
           ? {
@@ -194,72 +183,59 @@ export default function App() {
             }
           : c
       ))
-      console.log('[FRONTEND DEBUG] Switched from thinking to streaming mode')
 
       // Read SSE stream
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let fullContent = ''
       let buffer = ''
-      let chunkCount = 0
 
-      console.log('[FRONTEND DEBUG] Starting to read SSE stream...')
       while (true) {
         const { done, value } = await reader.read()
-        if (done) {
-          console.log('[FRONTEND DEBUG] Stream finished (done=true)')
-          break
-        }
+        if (done) break
 
-        chunkCount++
         buffer += decoder.decode(value, { stream: true })
         const lines = buffer.split('\n')
-        buffer = lines.pop() // keep incomplete line
+        buffer = lines.pop() // keep incomplete line in buffer
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6).trim()
-            if (data === '[DONE]') {
-              console.log('[FRONTEND DEBUG] Received [DONE] from server')
-              continue
-            }
+          if (!line.startsWith('data: ')) continue
 
-            try {
-              const parsed = JSON.parse(data)
-              console.log(`[FRONTEND DEBUG] Chunk #${chunkCount}:`, parsed)
-              if (parsed.error) throw new Error(parsed.error)
-              if (parsed.content) {
-                fullContent += parsed.content
-                // Real-time streaming update
-                setChats(prev => prev.map(c =>
-                  c.id === chatId
-                    ? {
-                        ...c,
-                        messages: c.messages.map(m =>
-                          m.id === assistantMsgId
-                            ? { ...m, content: fullContent }
-                            : m
-                        ),
-                        updatedAt: Date.now(),
-                      }
-                    : c
-                ))
-              }
-            } catch (parseErr) {
-              if (parseErr.message !== 'Unexpected end of JSON input') {
-                console.log('[FRONTEND DEBUG] Parse error:', parseErr, 'Raw line:', line)
-                throw parseErr
-              }
+          const data = line.slice(6).trim()
+          if (data === '[DONE]') continue
+
+          try {
+            const parsed = JSON.parse(data)
+            const delta = parsed.choices?.[0]?.delta
+
+            if (!delta) continue
+
+            // ✅ Only use 'content' field — skip 'reasoning_content' (thinking steps)
+            const chunk = delta.content
+            if (chunk && typeof chunk === 'string') {
+              fullContent += chunk
+              setChats(prev => prev.map(c =>
+                c.id === chatId
+                  ? {
+                      ...c,
+                      messages: c.messages.map(m =>
+                        m.id === assistantMsgId
+                          ? { ...m, content: fullContent }
+                          : m
+                      ),
+                      updatedAt: Date.now(),
+                    }
+                  : c
+              ))
             }
+          } catch {
+            // Skip malformed chunks silently
           }
         }
       }
 
-      console.log('[FRONTEND DEBUG] Final content length:', fullContent.length)
-
-      // If response was empty
+      // Handle empty response
       if (!fullContent.trim()) {
-        console.log('[FRONTEND DEBUG] Empty response received')
         setChats(prev => prev.map(c =>
           c.id === chatId
             ? {
@@ -275,9 +251,7 @@ export default function App() {
       }
 
     } catch (error) {
-      console.log('[FRONTEND DEBUG] Caught error:', error)
-      // Show error message in chat
-      const errorContent = `❌ **Error:** ${error.message}\n\nKripya check karein:\n- Internet connection theek hai?\n- Vercel mein \`x_url_api\` env variable set hai?\n- Sarvam AI API key valid hai?\n\n🔍 **Debug:** Check browser console for details.`
+      const errorContent = `❌ **Error:** ${error.message}\n\nKripya check karein:\n- \`.env.local\` mein \`VITE_SUPABASE_FUN_URL\` sahi hai?\n- \`VITE_SUPABASE_ANON_KEY\` set hai?\n- Supabase Edge Function deploy hui hai?`
       setChats(prev => prev.map(c =>
         c.id === chatId
           ? {
@@ -292,14 +266,12 @@ export default function App() {
       ))
     } finally {
       setIsStreaming(false)
-      console.log('[FRONTEND DEBUG] Streaming finished, isStreaming=false')
     }
-  }, [activeChatId, chats, isStreaming])
+  }, [activeChatId, chats, isStreaming, SUPABASE_FUN_URL, SUPABASE_ANON_KEY])
 
   return (
     <div className={`flex h-screen w-screen overflow-hidden ${theme === 'dark' ? 'bg-[#0f0f11] text-gray-100' : 'bg-[#f5f5f7] text-gray-900'}`}>
 
-      {/* Mobile overlay */}
       {isMobile && sidebarOpen && (
         <div
           className="fixed inset-0 z-20 bg-black/50 backdrop-blur-sm"
@@ -307,7 +279,6 @@ export default function App() {
         />
       )}
 
-      {/* Sidebar */}
       <div className={`
         ${isMobile ? 'fixed left-0 top-0 h-full z-30' : 'relative'}
         sidebar-transition
@@ -326,7 +297,6 @@ export default function App() {
         />
       </div>
 
-      {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 relative">
         {activeChat ? (
           <ChatWindow
